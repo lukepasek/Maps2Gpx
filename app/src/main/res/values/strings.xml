@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Maps2Gpx</string>
+    <string name="hint_link">Paste a Google Maps link (https://maps.app.goo.gl/…)</string>
+    <string name="convert">Convert to GPX</string>
+    <string name="convert_and_open">Convert to GPX and open</string>
+    <string name="next">Next</string>
+    <string name="share">Share</string>
+    <string name="open">Open</string>
+    <string name="change">Change</string>
+    <string name="settings_folder">Output folder</string>
+    <string name="settings_after">After conversion</string>
+    <string name="action_share">Share to another app (Send)</string>
+    <string name="action_view">Ask which app to open it in</string>
+    <string name="action_direct">Open directly in one app</string>
+    <string name="splash_title">Converting route…</string>
+    <string name="splash_disclaimer">The shared link contains only the stops, not the route
+        itself. The track is rebuilt by a routing service, so it follows real roads but will
+        not exactly match the route Google Maps showed.</string>
+    <string name="splash_disclaimer_gpx">Only the shape of the original file is kept. The track
+        is rebuilt from its significant points by a routing service using your settings, so it
+        will follow real roads for the chosen mode but will not match the original exactly.</string>
+    <string name="settings">Settings</string>
+    <string name="summary_title">Route ready</string>
+    <string name="auto_open">Open in the target app automatically</string>
+    <string name="auto_close">Close after opening the target app</string>
+    <string name="settings_engine">Routing engine</string>
+    <string name="engine_osrm">OSRM — fast, fixed profiles</string>
+    <string name="engine_valhalla">Valhalla — choose road surface</string>
+    <string name="engine_brouter">BRouter — offline, needs the BRouter app</string>
+    <string name="engine_hint_osrm">Online. Surface preference is baked into the profile and cannot be changed.</string>
+    <string name="engine_hint_valhalla">Online. You will be asked for the surface before each conversion.</string>
+    <string name="engine_hint_brouter_ready">Works offline. Download the routing segments for your area in the BRouter app.</string>
+    <string name="engine_hint_brouter_missing">The BRouter app is not installed — routing will fall back to an online engine.</string>
+    <string name="brouter_missing_title">BRouter is not installed</string>
+    <string name="brouter_missing_message">Offline routing needs the separate BRouter app, plus its routing segments for your area. Install it from the Play Store?</string>
+    <string name="install">Install</string>
+    <string name="use_online">Use online routing</string>
+    <string name="surface_title">Allowed road surface</string>
+    <string name="profile_title">Routing profile</string>
+    <string name="reroute">Reroute with other settings</string>
+    <string name="pick_app">Open GPX in</string>
+    <string name="clear">Clear</string>
+    <string name="folder_none">Not chosen yet</string>
+    <string name="direct_none">Not chosen yet</string>
+    <string name="reroute_gpx">Re-route a GPX file…</string>
+    <string name="pick_gpx">Pick the GPX file to re-route</string>
+    <string name="track_legend">Grey: the original track · Blue: re-routed</string>
+    <string name="travel_mode_title">How was this route travelled?</string>
+    <string name="open_brouter">Open BRouter to download the maps</string>
+    <string name="saved_folder_line">%1$s — %2$d GPX file(s)</string>
+    <string name="saved_empty">No GPX files in that folder yet. Convert a link or re-route a GPX
+        file and it will appear here.</string>
+    <string name="saved_no_folder">No output folder has been chosen yet, so nothing has been
+        saved. Pick one with Change on the previous screen.</string>
+    <string name="saved_failed">Could not read that folder: %1$s</string>
+    <string name="saved_hint">Tap a route to open it, or Share to send it on.</string>
+</resources>

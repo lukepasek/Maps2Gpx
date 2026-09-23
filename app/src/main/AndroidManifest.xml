@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Needed to list the apps that can open a .gpx, so the user can pick one as the
+         direct-open target. Without this, Android 11+ package visibility hides them. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="content" android:mimeType="application/gpx+xml" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="content" />
+        </intent>
+        <!-- Needed to see and bind BRouter's routing service. Without it, Android 11+
+             package visibility makes the bind fail silently. -->
+        <package android:name="btools.routingapp" />
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:theme="@style/AppTheme">
+
+        <!--
+            The home screen. Launching the app lands on the list of saved routes, which is what
+            someone opening it deliberately usually wants - the settings behind it are set once.
+            Its label carries the app name because a launcher entry named "Saved routes" would be
+            wrong on the home screen.
+        -->
+        <activity
+            android:name=".SavedRoutesActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:windowSoftInputMode="adjustResize">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            Conversion, the splash and the settings. No longer the launcher activity, but still
+            every share and "open with" target - and still the component other apps see in a
+            chooser, hence the app name as its label.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:parentActivityName=".SavedRoutesActivity"
+            android:windowSoftInputMode="adjustResize">
+
+            <!-- Primary entry point: Google Maps -> Share -> Maps2Gpx -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
+            <!-- Secondary: "Open with" on a Maps link. Not autoVerify'd on purpose,
+                 so this never steals links from Google Maps itself. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="maps.app.goo.gl" />
+                <data android:scheme="https" android:host="goo.gl" android:pathPrefix="/maps" />
+                <data android:scheme="https" android:host="www.google.com" android:pathPrefix="/maps" />
+                <data android:scheme="https" android:host="maps.google.com" />
+            </intent-filter>
+
+            <!-- Third entry point: an existing GPX file, re-routed with the configured
+                 engine and profile. Declared the same way GPX importers declare themselves,
+                 and for the same reason: apps hand a file on with VIEW far more often than
+                 with SEND, and Android's MIME map has no .gpx entry, so the path pattern is
+                 what actually matches most senders. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" android:mimeType="application/gpx+xml" />
+                <data android:scheme="file" android:mimeType="application/gpx+xml" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" android:mimeType="*/*"
+                    android:pathPattern=".*\\.gpx" />
+                <data android:scheme="file" android:mimeType="*/*"
+                    android:pathPattern=".*\\.gpx" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/gpx+xml" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".ChosenAppReceiver"
+            android:exported="false" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+
+</manifest>

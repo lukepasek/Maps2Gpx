@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Adaptive-icon foreground: the track, with a green triangle at the start and a red square
+    at the finish.
+
+    Every point stays inside the 66dp safe circle - radius 33 around (54,54) - because the
+    launcher mask crops the corners hardest. The triangle's base corners and the square's
+    outer corners are the furthest-out points here, both at radius ~32.5, so they survive
+    the squircle. Each marker sits on a larger white shape, which separates it from the map
+    and hides the track's raw end.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- White casing under the track, so it reads against the water and the green space -->
+    <path
+        android:pathData="M38.4,71.2 C41.5,61.8 37.6,56.3 46.2,53.2 C54.8,50.1 55.6,57.1 60.2,50.9 C64,45 60,41 66,38"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="11"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- The track itself -->
+    <path
+        android:pathData="M38.4,71.2 C41.5,61.8 37.6,56.3 46.2,53.2 C54.8,50.1 55.6,57.1 60.2,50.9 C64,45 60,41 66,38"
+        android:strokeColor="#1565C0"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Start: green "play" triangle, the universal start symbol -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M45.6,71.2 L32.2,78.15 L32.2,64.25 Z" />
+    <path
+        android:fillColor="#2E7D32"
+        android:pathData="M44,71.2 L33,76.9 L33,65.5 Z" />
+
+    <!-- Finish: red square -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M58,30 h16 v16 h-16 Z" />
+    <path
+        android:fillColor="#D32F2F"
+        android:pathData="M60,32 h12 v12 h-12 Z" />
+</vector>

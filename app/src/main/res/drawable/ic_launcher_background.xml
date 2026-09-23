@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Adaptive-icon background: a stylised map.
+
+    The launcher masks this to roughly the central 72dp of the 108dp canvas, so every
+    recognisable feature is kept inside x/y 16..92. Anything drawn out at the edges is
+    invisible in practice. The base colour still bleeds to the full canvas, because the
+    launcher also parallax-shifts this layer.
+
+    The track (foreground) runs lower-left to upper-right, so the map features sit in the
+    two areas it leaves free: water upper-left, green space lower-right.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Map paper, full bleed -->
+    <path
+        android:fillColor="#F2EEE1"
+        android:pathData="M0,0h108v108H0z" />
+
+    <!-- Water, upper left -->
+    <path
+        android:fillColor="#8FC5E8"
+        android:pathData="M17,30 C23,22 37,21 43,29 C49,37 44,49 35,51 C25,53 11,44 17,30 Z" />
+
+    <!-- Green space, lower right -->
+    <path
+        android:fillColor="#B5DCA1"
+        android:pathData="M62,86 C62,73 73,63 86,65 C98,67 101,80 96,90 C91,100 69,101 62,86 Z" />
+
+    <!-- Streets: casing first, then the carriageway, so they read as roads not lines -->
+    <path
+        android:pathData="M-4,25 L112,19"
+        android:strokeColor="#E1D8C4"
+        android:strokeWidth="8" />
+    <path
+        android:pathData="M-4,89 L112,83"
+        android:strokeColor="#E1D8C4"
+        android:strokeWidth="8" />
+    <path
+        android:pathData="M47,-4 L55,112"
+        android:strokeColor="#E1D8C4"
+        android:strokeWidth="6.5" />
+    <path
+        android:pathData="M-4,25 L112,19"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5" />
+    <path
+        android:pathData="M-4,89 L112,83"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5" />
+    <path
+        android:pathData="M47,-4 L55,112"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.5" />
+</vector>

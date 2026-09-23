@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+        DeviceDefault so the app looks like the rest of the device rather than stock
+        Material. The dark counterpart lives in res/values-night/themes.xml and the
+        platform swaps between them with the system dark-mode setting.
+    -->
+    <style name="AppTheme" parent="@android:style/Theme.DeviceDefault.Light" />
+
+</resources>

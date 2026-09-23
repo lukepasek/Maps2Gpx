@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Warning triangle for the splash-screen note. Deliberately monochrome: MainActivity
+    tints it with the note's own text colour, so it matches in both the light and the dark
+    theme. The grey here is only the untinted fallback.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="22dp"
+    android:height="22dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Triangle outline -->
+    <path
+        android:pathData="M12,3.6 L22.1,21 L1.9,21 Z"
+        android:strokeColor="#888888"
+        android:strokeWidth="2"
+        android:strokeLineJoin="round" />
+    <!-- Exclamation -->
+    <path
+        android:pathData="M12,9.6 V14.9"
+        android:strokeColor="#888888"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#888888"
+        android:pathData="M10.85,18 a1.15,1.15 0 1,0 2.3,0 a1.15,1.15 0 1,0 -2.3,0 Z" />
+</vector>

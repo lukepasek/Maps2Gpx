@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Scrollable because the summary face carries a track outline and an elevation profile on
+     top of the text, which will not fit on a short screen. fillViewport keeps the shorter
+     faces (spinner, prompt) laid out as before. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingBottom="24dp"
+        android:paddingLeft="24dp"
+        android:paddingRight="24dp"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="16dp">
+
+    <!-- Shown while converting. -->
+    <LinearLayout
+        android:id="@+id/spinner_group"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <ProgressBar
+            style="?android:attr/progressBarStyleLarge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:indeterminate="true" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/splash_title"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/splash_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="2"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- Replaces the spinner once the route is ready. -->
+    <LinearLayout
+        android:id="@+id/summary_group"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/summary_title"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/splash_summary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:lineSpacingExtra="3dp"
+            android:textSize="15sp" />
+
+        <!-- Routing that silently degraded: offline became online, or roads became straight
+             lines. Above the outline, because it changes what the outline means. Deliberately
+             not the same colour as the summary above it - this is the one thing on the page
+             that is not merely information, and the icon is tinted to match it in code. -->
+        <TextView
+            android:id="@+id/summary_warning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:drawableStart="@drawable/ic_warning"
+            android:drawableLeft="@drawable/ic_warning"
+            android:drawablePadding="10dp"
+            android:gravity="start|center_vertical"
+            android:lineSpacingExtra="2dp"
+            android:textColor="@color/warning"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <!-- Only when rd5 tiles were the reason. We cannot download them; BRouter can. -->
+        <Button
+            android:id="@+id/brouter_button"
+            style="?android:attr/buttonStyleSmall"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/open_brouter"
+            android:visibility="gone" />
+
+        <pl.net.xtech.maps2gpx.TrackOutlineView
+            android:id="@+id/track_outline"
+            android:layout_width="match_parent"
+            android:layout_height="128dp"
+            android:layout_marginTop="12dp" />
+
+        <!-- Only shown when there are two shapes in the outline above, i.e. after a
+             re-route of an existing GPX file. -->
+        <TextView
+            android:id="@+id/track_legend"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center"
+            android:text="@string/track_legend"
+            android:textColor="?android:attr/textColorSecondary"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <pl.net.xtech.maps2gpx.ElevationProfileView
+            android:id="@+id/elevation_profile"
+            android:layout_width="match_parent"
+            android:layout_height="76dp"
+            android:layout_marginTop="8dp" />
+
+        <!-- Shown only when auto-open is off, so opening is an explicit act. -->
+        <Button
+            android:id="@+id/summary_open_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/open"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/reroute_button"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/reroute" />
+    </LinearLayout>
+
+    <!-- Shown first instead, when Valhalla is the routing engine: the surface preference
+         has to be picked before routing, since it changes the route. -->
+    <LinearLayout
+        android:id="@+id/surface_group"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/surface_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/surface_title"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/surface_subtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:layout_marginTop="4dp"
+            android:textSize="13sp" />
+
+        <RadioGroup
+            android:id="@+id/surface_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <Button
+            android:id="@+id/surface_go_open"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/convert_and_open" />
+
+        <Button
+            android:id="@+id/surface_go"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/convert" />
+    </LinearLayout>
+
+    <!-- Which backend is about to route, and how it is configured. Outside both groups so
+         it shows on the surface prompt and while converting. -->
+    <TextView
+        android:id="@+id/splash_backend"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:gravity="center"
+        android:textColor="?android:attr/textColorSecondary"
+        android:textSize="13sp" />
+
+    <!-- Outside both groups, so it is visible whichever face the splash is showing.
+         Sets the expectation up front rather than letting the user discover it by
+         comparing the track against Maps afterwards. -->
+    <TextView
+        android:id="@+id/splash_disclaimer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:drawableStart="@drawable/ic_warning"
+        android:drawableLeft="@drawable/ic_warning"
+        android:drawablePadding="10dp"
+        android:gravity="start|center_vertical"
+        android:text="@string/splash_disclaimer"
+        android:textColor="?android:attr/textColorSecondary"
+        android:textSize="12sp" />
+
+    <!-- Escape hatch: swap to the full UI, which is where the settings live. Visible on
+         both faces of the splash. -->
+    <Button
+        android:id="@+id/splash_settings"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="12dp"
+            android:text="@string/settings" />
+
+    </LinearLayout>
+
+</ScrollView>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Lightened so it reads against a near-black background; the light-mode value is too
+         dark to be seen there. -->
+    <color name="warning">#FFB74D</color>
+
+</resources>
