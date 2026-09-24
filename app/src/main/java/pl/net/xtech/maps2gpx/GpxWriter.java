@@ -17,8 +17,8 @@ final class GpxWriter {
      * preference, and {@code <extensions>} is the sanctioned place for anything the schema
      * does not define - readers that do not know the namespace simply skip it.
      */
-    private static final String EXT_NS = "https://pl.net.xtech/maps2gpx/1";
-    private static final String EXT_PREFIX = "m2g";
+    static final String EXT_NS = "https://pl.net.xtech/maps2gpx/1";
+    static final String EXT_PREFIX = "m2g";
 
     private GpxWriter() {
     }
@@ -30,7 +30,7 @@ final class GpxWriter {
      */
     static String write(String title, List<MapsLinkParser.Stop> stops, Route route,
                         String sourceUrl, Date now, String engineLabel, String surfaceLabel,
-                        String origin) {
+                        String origin, Route sourceRoute) {
         StringBuilder sb = new StringBuilder(route.track.size() * 64 + 512);
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
         sb.append("<gpx version=\"1.1\" creator=\"Maps2Gpx\"\n")
@@ -97,8 +97,33 @@ final class GpxWriter {
         }
         sb.append("    </trkseg>\n");
         sb.append("  </trk>\n");
+        appendSourceTrack(sb, sourceRoute);
         sb.append("</gpx>\n");
         return sb.toString();
+    }
+
+    private static void appendSourceTrack(StringBuilder sb, Route sourceRoute) {
+        if (sourceRoute == null || sourceRoute.track.size() < 2) {
+            return;
+        }
+        sb.append("  <trk>\n");
+        sb.append("    <name>Original track</name>\n");
+        sb.append("    <extensions>\n");
+        appendExt(sb, "role", "source");
+        sb.append("    </extensions>\n");
+        sb.append("    <trkseg>\n");
+        for (LatLng point : sourceRoute.track) {
+            sb.append("      <trkpt lat=\"").append(coord(point.lat))
+                    .append("\" lon=\"").append(coord(point.lon));
+            if (point.ele == null) {
+                sb.append("\"/>\n");
+            } else {
+                sb.append("\"><ele>").append(elevation(point.ele))
+                        .append("</ele></trkpt>\n");
+            }
+        }
+        sb.append("    </trkseg>\n");
+        sb.append("  </trk>\n");
     }
 
     /**

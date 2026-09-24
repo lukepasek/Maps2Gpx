@@ -2,6 +2,15 @@ plugins {
     id 'com.android.application'
 }
 
+import java.util.Properties
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { localProperties.load(it) }
+}
+def mapboxAccessToken = localProperties.getProperty('mapbox.accessToken', '')
+
 android {
     compileSdk 34
 
@@ -29,6 +38,12 @@ android {
     // AGP 8 disables AIDL by default; we need it for BRouter's IBRouterService.
     buildFeatures {
         aidl true
+        buildConfig true
+    }
+
+    defaultConfig {
+        buildConfigField 'String', 'MAPBOX_ACCESS_TOKEN',
+                '"' + mapboxAccessToken.replace('\\', '\\\\').replace('"', '\\"') + '"'
     }
 
     compileOptions {
@@ -41,6 +56,7 @@ android {
 dependencies {
     implementation 'androidx.annotation:annotation:1.8.0'
     implementation 'androidx.core:core:1.13.1'
+    implementation 'org.maplibre.gl:android-sdk:11.13.5'
 
     testImplementation 'junit:junit:4.13.2'
 }

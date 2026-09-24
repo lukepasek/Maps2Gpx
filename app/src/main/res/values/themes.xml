@@ -8,4 +8,11 @@
     -->
     <style name="AppTheme" parent="@android:style/Theme.DeviceDefault.Light" />
 
+    <style name="DetailTheme" parent="@android:style/Theme.DeviceDefault.Light.NoActionBar">
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+
 </resources>

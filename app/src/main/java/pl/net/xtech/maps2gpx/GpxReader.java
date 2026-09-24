@@ -56,15 +56,22 @@ final class GpxReader {
         final String typeHint;
         /** True when the point cap cut the track short. */
         final boolean truncated;
+         /** Maps2Gpx surface ranges embedded in the document, when valid and complete. */
+         final SurfaceProfile surfaceProfile;
+           /** Original geometry embedded by Maps2Gpx when this file is a rerouted track. */
+           final Route sourceRoute;
 
         Parsed(Route original, List<LatLng> waypoints, boolean waypointsAreRoute, String name,
-               String typeHint, boolean truncated) {
+               String typeHint, boolean truncated, SurfaceProfile surfaceProfile,
+               Route sourceRoute) {
             this.original = original;
             this.waypoints = waypoints;
             this.waypointsAreRoute = waypointsAreRoute;
             this.name = name;
             this.typeHint = typeHint;
             this.truncated = truncated;
+            this.surfaceProfile = surfaceProfile;
+            this.sourceRoute = sourceRoute;
         }
     }
 
@@ -74,6 +81,8 @@ final class GpxReader {
     /** Closes {@code in}. */
     static Parsed read(InputStream in) throws IOException {
         List<LatLng> trackPoints = new ArrayList<>();
+        List<LatLng> sourceTrackPoints = new ArrayList<>();
+        List<LatLng> currentTrackPoints = null;
         List<LatLng> routePoints = new ArrayList<>();
         List<LatLng> markers = new ArrayList<>();
         String metadataName = null;
@@ -83,6 +92,10 @@ final class GpxReader {
         Long firstTime = null;
         Long lastTime = null;
         boolean truncated = false;
+        List<SurfaceProfile.Interval> surfaceIntervals = new ArrayList<>();
+        SurfaceProfile embeddedSurfaceProfile = null;
+        boolean inSurfaceProfile = false;
+        boolean invalidSurfaceProfile = false;
 
         // Which kind of point element we are inside, so a nested <name> or <ele> lands on the
         // right thing. Points do not nest, so one slot is enough.
@@ -95,6 +108,7 @@ final class GpxReader {
 
         boolean inMetadata = false;
         boolean inTrk = false;
+        boolean currentTrackIsSource = false;
 
         try {
             XmlPullParser parser = Xml.newPullParser();
@@ -123,6 +137,8 @@ final class GpxReader {
                         inMetadata = true;
                     } else if ("trk".equals(tag)) {
                         inTrk = true;
+                        currentTrackPoints = new ArrayList<>();
+                        currentTrackIsSource = false;
                     } else if ("ele".equals(tag)) {
                         if (pointKind != null) {
                             ele = number(text(parser));
@@ -149,6 +165,26 @@ final class GpxReader {
                         // Our own m2g: extensions, when the file we are re-routing came from
                         // an earlier run of this app.
                         extensionHint = text(parser);
+                    } else if ("role".equals(tag) && inTrk && pointKind == null) {
+                        currentTrackIsSource = "source".equals(text(parser).trim());
+                    } else if ("surfaceProfile".equals(tag)
+                            && embeddedSurfaceProfile == null
+                            && "1".equals(parser.getAttributeValue(null, "version"))) {
+                        inSurfaceProfile = true;
+                        invalidSurfaceProfile = false;
+                        surfaceIntervals.clear();
+                    } else if ("section".equals(tag) && inSurfaceProfile) {
+                        Double from = number(parser.getAttributeValue(null, "from"));
+                        Double to = number(parser.getAttributeValue(null, "to"));
+                        String surface = parser.getAttributeValue(null, "surface");
+                        if (from == null || to == null || surface == null
+                                || surface.trim().isEmpty() || from < 0 || to > 1
+                                || to <= from) {
+                            invalidSurfaceProfile = true;
+                        } else {
+                            surfaceIntervals.add(new SurfaceProfile.Interval(
+                                    from, to, surface.trim()));
+                        }
                     }
                 } else if (event == XmlPullParser.END_TAG) {
                     String tag = local(parser.getName());
@@ -156,10 +192,14 @@ final class GpxReader {
                         LatLng point = new LatLng(lat, lon, blankToNull(pointName), ele);
                         if (point.isValid()) {
                             if ("trkpt".equals(pointKind)) {
-                                if (trackPoints.size() >= MAX_POINTS) {
+                                int previousPoints = currentTrackIsSource
+                                        ? sourceTrackPoints.size() : trackPoints.size();
+                                if (currentTrackPoints == null
+                                        || previousPoints + currentTrackPoints.size()
+                                        >= MAX_POINTS) {
                                     truncated = true;
                                 } else {
-                                    trackPoints.add(point);
+                                    currentTrackPoints.add(point);
                                     if (pointTime != null) {
                                         if (firstTime == null) {
                                             firstTime = pointTime;
@@ -177,7 +217,18 @@ final class GpxReader {
                     } else if ("metadata".equals(tag)) {
                         inMetadata = false;
                     } else if ("trk".equals(tag)) {
+                        if (currentTrackPoints != null) {
+                            (currentTrackIsSource ? sourceTrackPoints : trackPoints)
+                                    .addAll(currentTrackPoints);
+                        }
+                        currentTrackPoints = null;
+                        currentTrackIsSource = false;
                         inTrk = false;
+                    } else if ("surfaceProfile".equals(tag) && inSurfaceProfile) {
+                        if (!invalidSurfaceProfile && completeSurfaceProfile(surfaceIntervals)) {
+                            embeddedSurfaceProfile = new SurfaceProfile(surfaceIntervals);
+                        }
+                        inSurfaceProfile = false;
                     }
                 }
             }
@@ -199,13 +250,31 @@ final class GpxReader {
             elapsed = plausibleElapsedSeconds(firstTime, lastTime);
         }
         Route original = new Route(geometry, lengthOf(geometry), elapsed, "source GPX", null);
+        Route sourceRoute = sourceTrackPoints.size() < 2 ? null
+            : new Route(sourceTrackPoints, lengthOf(sourceTrackPoints), 0,
+                "source GPX", null);
 
         boolean fromRoute = trackPoints.isEmpty() && !routePoints.isEmpty();
         List<LatLng> waypoints = fromRoute ? routePoints
                 : (!routePoints.isEmpty() ? routePoints : markers);
         return new Parsed(original, waypoints, fromRoute,
                 firstNonBlank(metadataName, trackName),
-                firstNonBlank(typeHint, extensionHint), truncated);
+            firstNonBlank(typeHint, extensionHint), truncated, embeddedSurfaceProfile,
+            sourceRoute);
+    }
+
+    private static boolean completeSurfaceProfile(List<SurfaceProfile.Interval> intervals) {
+        if (intervals.isEmpty()) {
+            return false;
+        }
+        double expectedStart = 0;
+        for (SurfaceProfile.Interval interval : intervals) {
+            if (Math.abs(interval.startFraction - expectedStart) > 1e-6) {
+                return false;
+            }
+            expectedStart = interval.endFraction;
+        }
+        return Math.abs(expectedStart - 1) <= 1e-6;
     }
 
     /**

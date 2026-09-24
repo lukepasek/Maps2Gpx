@@ -4,6 +4,7 @@ import android.content.Context;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -79,6 +80,8 @@ final class Maps2Gpx {
          * can draw the two shapes over each other and compare the totals.
          */
         final Route sourceRoute;
+        /** Actual per-segment road surfaces analyzed for the converted route, when available. */
+        final SurfaceProfile surfaceProfile;
         /**
          * Where {@link #travelMode} came from, when that is worth admitting on screen - a GPX
          * file need not say, and guessing wrong changes the route completely. Null when it was
@@ -90,7 +93,8 @@ final class Maps2Gpx {
 
         Result(String gpx, String fileName, String title, String startLabel, String endLabel,
                int stopCount, Route route, String travelMode, String travelModeNote,
-               LatLng endPoint, Route sourceRoute, Notices notices) {
+             LatLng endPoint, Route sourceRoute, SurfaceProfile surfaceProfile,
+             Notices notices) {
             this.gpx = gpx;
             this.fileName = fileName;
             this.title = title;
@@ -103,6 +107,7 @@ final class Maps2Gpx {
             this.travelModeNote = travelModeNote;
             this.endPoint = endPoint;
             this.sourceRoute = sourceRoute;
+            this.surfaceProfile = surfaceProfile;
             this.notices = notices;
         }
     }
@@ -242,14 +247,49 @@ final class Maps2Gpx {
             surfaceLabel = surface.label;
         }
         String gpx = GpxWriter.write(name, stops, route, sourceUrl, now, engine.label,
-                surfaceLabel, origin);
+            surfaceLabel, origin, sourceRoute);
+        SurfaceProfile surfaceProfile = analyzeSurfaceProfile(route, progress);
+        gpx = addSurfaceProfile(gpx, surfaceProfile, progress);
         String fileName = GpxWriter.suggestFileName(startLabel, endLabel, route.profileTag, now);
         progress.step("GPX ready: " + fileName + " (" + gpx.length() + " bytes)");
 
         List<LatLng> located = locatedPoints(stops);
         return new Result(gpx, fileName, name, startLabel, endLabel, located.size(), route,
                 travelMode, travelModeNote,
-                located.isEmpty() ? null : located.get(located.size() - 1), sourceRoute, notices);
+                located.isEmpty() ? null : located.get(located.size() - 1), sourceRoute,
+                surfaceProfile, notices);
+    }
+
+    private static SurfaceProfile analyzeSurfaceProfile(Route route, Progress progress) {
+        if (route.track.size() < 2) {
+            return null;
+        }
+        try {
+            progress.step("Analyzing road surfaces…");
+            SurfaceProfile profile = SurfaceAnalyzer.fetch(route.track);
+            progress.step("Road-surface analysis complete.");
+            return profile;
+        } catch (IOException | RuntimeException e) {
+            progress.step("Road-surface analysis unavailable (" + e.getMessage()
+                    + ") - the map viewer will retry.");
+            return null;
+        }
+    }
+
+    private static String addSurfaceProfile(String gpx, SurfaceProfile profile,
+                                            Progress progress) {
+        if (profile == null) {
+            return gpx;
+        }
+        try {
+            byte[] enriched = GpxSurfaceWriter.write(
+                    gpx.getBytes(StandardCharsets.UTF_8), profile);
+            progress.step("Road-surface profile added to the GPX file.");
+            return new String(enriched, StandardCharsets.UTF_8);
+        } catch (IOException | RuntimeException e) {
+            progress.step("Could not embed road-surface data (" + e.getMessage() + ").");
+            return gpx;
+        }
     }
 
     private static List<LatLng> locatedPoints(List<MapsLinkParser.Stop> stops) {

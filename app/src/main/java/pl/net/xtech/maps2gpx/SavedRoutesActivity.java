@@ -5,49 +5,55 @@ import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
-import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.ListView;
+import android.widget.PopupMenu;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.InputStream;
 import java.io.IOException;
+import java.text.Normalizer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 
 /**
- * The home screen: a link to convert, every GPX already sitting in the chosen output folder
- * newest first, and a way into the settings.
+ * The home screen: every GPX in the chosen output folder, newest first, and a way into settings.
  *
  * <p>The folder is the record - there is no separate database of past conversions, because there
  * does not need to be one: the files are already there, they are already named after their
  * endpoints, and a list built from a private index would drift out of step with what is
  * actually on disk the first time the user moved or deleted anything.
  *
- * <p>Deliberately holds no conversion logic. {@link MainActivity} owns that, along with the
- * progress log, the summary and every intent filter other apps see; pasting a link here just
- * hands the text to it exactly as a share from Google Maps would.
+ * <p>Deliberately holds no conversion logic. {@link MainActivity} owns incoming Maps shares,
+ * routing settings and conversion; this activity is the on-device GPX library.
  */
 public class SavedRoutesActivity extends Activity {
 
     private static final String TAG = "Maps2Gpx";
-    private static final int REQUEST_PICK_GPX = 1;
-
     /** The timestamp this app appends to its own file names, e.g. {@code _20260818-1402.gpx}. */
     private static final Pattern OWN_STAMP =
             Pattern.compile("_\\d{8}-\\d{4}\\.gpx$", Pattern.CASE_INSENSITIVE);
@@ -60,40 +66,70 @@ public class SavedRoutesActivity extends Activity {
     private OutputFolder outputFolder;
     private Settings settings;
 
+    private final List<OutputFolder.Entry> allEntries = new ArrayList<>();
+    private final Map<String, Double> distanceCache = new HashMap<>();
     private ListView list;
-    private TextView folderLine;
+    private EditText search;
+    private Drawable clearSearchIcon;
     private TextView message;
     private ProgressBar progress;
-    private EditText linkInput;
-    private View hint;
     private SavedAdapter adapter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
         setContentView(R.layout.activity_saved);
 
         outputFolder = new OutputFolder(this);
         settings = new Settings(this);
 
         list = findViewById(R.id.saved_list);
-        folderLine = findViewById(R.id.saved_folder);
+        search = findViewById(R.id.saved_search);
         message = findViewById(R.id.saved_message);
         progress = findViewById(R.id.saved_progress);
-        linkInput = findViewById(R.id.link_input);
-        hint = findViewById(R.id.saved_hint);
 
-        findViewById(R.id.convert_button).setOnClickListener(v -> convert());
-        findViewById(R.id.reroute_gpx_button).setOnClickListener(v -> pickGpxFile());
-        findViewById(R.id.settings_button).setOnClickListener(
-                v -> startActivity(new Intent(this, MainActivity.class)));
+        clearSearchIcon = getDrawable(R.drawable.ic_clear_search);
+        search.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence text, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence text, int start, int before, int count) {
+                updateClearSearchIcon(text.length() > 0);
+                applyFilter();
+            }
+
+            @Override
+            public void afterTextChanged(Editable text) {
+            }
+        });
+        search.setOnTouchListener((view, event) -> {
+            if (event.getAction() != MotionEvent.ACTION_UP
+                    || search.getCompoundDrawablesRelative()[2] == null) {
+                return false;
+            }
+            int clearStart = search.getWidth() - search.getPaddingEnd()
+                    - clearSearchIcon.getIntrinsicWidth();
+            if (event.getX() < clearStart) {
+                return false;
+            }
+            search.setText("");
+            return true;
+        });
+        search.setOnEditorActionListener((view, actionId, event) -> {
+            dismissKeyboard();
+            return true;
+        });
+        findViewById(R.id.saved_menu).setOnClickListener(this::showMenu);
 
         adapter = new SavedAdapter(this, new ArrayList<OutputFolder.Entry>());
         list.setAdapter(adapter);
         list.setOnItemClickListener((parent, view, position, id) -> {
             OutputFolder.Entry entry = adapter.getItem(position);
             if (entry != null) {
-                open(entry);
+                startActivity(SavedRouteDetailActivity.intentFor(this, entry));
             }
         });
     }
@@ -106,99 +142,152 @@ public class SavedRoutesActivity extends Activity {
         reload();
     }
 
-    /**
-     * Hands the pasted text to {@link MainActivity} as a share, which is the same door Google
-     * Maps comes through - so the splash, the engine prompts, the summary and the log all behave
-     * identically however the link arrived. Nothing about converting is duplicated here.
-     */
-    private void convert() {
-        String text = linkInput.getText().toString().trim();
-        if (text.isEmpty()) {
-            toast("Paste a Google Maps link first.");
-            return;
-        }
-        startActivity(new Intent(this, MainActivity.class)
-                .setAction(Intent.ACTION_SEND)
-                .setType("text/plain")
-                .putExtra(Intent.EXTRA_TEXT, text));
-    }
-
-    /** Lets the user hand over a GPX without going through another app's share sheet. */
-    private void pickGpxFile() {
-        Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        pick.addCategory(Intent.CATEGORY_OPENABLE);
-        // Android has no MIME entry for .gpx, so a provider may report anything at all -
-        // */* with the extra below is what actually lists the files.
-        pick.setType("*/*");
-        pick.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
-                GpxFiles.MIME, "application/xml", "text/xml", "application/octet-stream"});
-        try {
-            startActivityForResult(Intent.createChooser(pick, getString(R.string.pick_gpx)),
-                    REQUEST_PICK_GPX);
-        } catch (RuntimeException e) {
-            toast("No file picker available on this device");
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_PICK_GPX || resultCode != RESULT_OK
-                || data == null || data.getData() == null) {
-            return;
-        }
-        // Handed on as a VIEW of the document, which is the same door an "open with" from a file
-        // manager comes through. The read grant belongs to the package rather than to this
-        // activity, so MainActivity can open it without any further ceremony.
-        startActivity(new Intent(this, MainActivity.class)
-                .setAction(Intent.ACTION_VIEW)
-                .setDataAndType(data.getData(), GpxFiles.MIME)
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));
-    }
-
     private void reload() {
         Uri tree = outputFolder.treeUri();
         if (tree == null) {
+            allEntries.clear();
             adapter.clear();
-            folderLine.setText(R.string.folder_none);
             showMessage(getString(R.string.saved_no_folder));
             return;
         }
         progress.setVisibility(View.VISIBLE);
         executor.execute(() -> {
             try {
-                String where = outputFolder.describe(tree);
                 List<OutputFolder.Entry> entries = outputFolder.list(tree);
-                mainHandler.post(() -> show(where, entries));
+                mainHandler.post(() -> show(entries));
+                loadDistances(entries);
             } catch (IOException | RuntimeException e) {
                 Log.w(TAG, "Could not list " + tree, e);
                 mainHandler.post(() -> {
                     progress.setVisibility(View.INVISIBLE);
+                    allEntries.clear();
                     adapter.clear();
-                    folderLine.setText(R.string.folder_none);
                     showMessage(getString(R.string.saved_failed, e.getMessage()));
                 });
             }
         });
     }
 
-    private void show(String folderName, List<OutputFolder.Entry> entries) {
+    private void show(List<OutputFolder.Entry> entries) {
         progress.setVisibility(View.INVISIBLE);
-        folderLine.setText(getString(R.string.saved_folder_line, folderName, entries.size()));
-        adapter.clear();
-        adapter.addAll(entries);
+        allEntries.clear();
+        allEntries.addAll(entries);
         if (entries.isEmpty()) {
+            adapter.clear();
             showMessage(getString(R.string.saved_empty));
         } else {
+            applyFilter();
+        }
+    }
+
+    private void loadDistances(List<OutputFolder.Entry> entries) {
+        for (OutputFolder.Entry entry : entries) {
+            String cacheKey = entry.uri + ":" + entry.sizeBytes + ":" + entry.modifiedMillis;
+            Double cached = distanceCache.get(cacheKey);
+            if (cached != null) {
+                entry.distanceMeters = cached;
+                continue;
+            }
+            try (InputStream input = getContentResolver().openInputStream(entry.uri)) {
+                if (input == null) {
+                    continue;
+                }
+                entry.distanceMeters = GpxReader.read(input).original.distanceMeters;
+                distanceCache.put(cacheKey, entry.distanceMeters);
+                mainHandler.post(() -> {
+                    if (!isFinishing() && allEntries.contains(entry)) {
+                        adapter.notifyDataSetChanged();
+                    }
+                });
+            } catch (IOException | RuntimeException e) {
+                Log.w(TAG, "Could not measure " + entry.displayName, e);
+            }
+        }
+    }
+
+    private void applyFilter() {
+        String query = searchKey(search.getText().toString());
+        adapter.clear();
+        for (OutputFolder.Entry entry : allEntries) {
+            String name = searchKey(readableName(entry.displayName));
+            if (query.isEmpty() || name.contains(query)) {
+                adapter.add(entry);
+            }
+        }
+        if (adapter.isEmpty() && !allEntries.isEmpty()) {
+            showMessage(getString(R.string.saved_no_matches));
+        } else if (!adapter.isEmpty()) {
             message.setVisibility(View.GONE);
             list.setVisibility(View.VISIBLE);
-            hint.setVisibility(View.VISIBLE);
         }
+    }
+
+    static String searchKey(String value) {
+        if (value == null) {
+            return "";
+        }
+        int start = 0;
+        int end = value.length();
+        while (start < end) {
+            int codePoint = value.codePointAt(start);
+            if (!Character.isWhitespace(codePoint) && !Character.isSpaceChar(codePoint)) {
+                break;
+            }
+            start += Character.charCount(codePoint);
+        }
+        while (end > start) {
+            int codePoint = value.codePointBefore(end);
+            if (!Character.isWhitespace(codePoint) && !Character.isSpaceChar(codePoint)) {
+                break;
+            }
+            end -= Character.charCount(codePoint);
+        }
+        String normalized = Normalizer.normalize(value.substring(start, end), Normalizer.Form.NFD)
+                .toLowerCase(Locale.ROOT)
+                .replace('ł', 'l');
+        StringBuilder key = new StringBuilder(normalized.length());
+        for (int offset = 0; offset < normalized.length();) {
+            int codePoint = normalized.codePointAt(offset);
+            if (Character.isLetterOrDigit(codePoint)) {
+                key.appendCodePoint(codePoint);
+            }
+            offset += Character.charCount(codePoint);
+        }
+        return key.toString();
+    }
+
+    private void updateClearSearchIcon(boolean visible) {
+        search.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                null, null, visible ? clearSearchIcon : null, null);
+    }
+
+    private void dismissKeyboard() {
+        search.clearFocus();
+        InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (keyboard != null) {
+            keyboard.hideSoftInputFromWindow(search.getWindowToken(), 0);
+        }
+    }
+
+    private void showMenu(View anchor) {
+        PopupMenu menu = new PopupMenu(this, anchor);
+        menu.inflate(R.menu.saved_routes_menu);
+        menu.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == R.id.menu_settings) {
+                startActivity(new Intent(this, MainActivity.class));
+                return true;
+            }
+            if (item.getItemId() == R.id.menu_about) {
+                startActivity(new Intent(this, AboutActivity.class));
+                return true;
+            }
+            return false;
+        });
+        menu.show();
     }
 
     private void showMessage(String text) {
         progress.setVisibility(View.INVISIBLE);
-        hint.setVisibility(View.GONE);
         message.setText(text);
         message.setVisibility(View.VISIBLE);
         list.setVisibility(View.GONE);
@@ -214,25 +303,22 @@ public class SavedRoutesActivity extends Activity {
         withCacheCopy(entry, uri -> {
             ComponentName target = settings.postAction() == Settings.PostAction.DIRECT
                     ? settings.directComponent() : null;
+            Intent view = GpxFiles.viewIntent(uri);
             if (target != null) {
-                Intent view = GpxFiles.viewIntent(uri);
                 view.setComponent(target);
-                try {
-                    startActivity(view);
-                    return;
-                } catch (ActivityNotFoundException e) {
-                    toast(target.getPackageName() + " can no longer open this");
-                }
             }
-            // No chosen-app callback on purpose: unlike the post-conversion hand-off, picking an
-            // app here must not silently become the remembered "open directly" target.
-            startActivity(GpxFiles.openChooser(this, uri, entry.displayName, null));
+            try {
+                // Without an explicit target Android uses the system default, or asks once when
+                // no default exists. The library does not change the app's remembered setting.
+                startActivity(view);
+            } catch (ActivityNotFoundException e) {
+                if (target == null) {
+                    throw e;
+                }
+                toast(target.getPackageName() + " can no longer open this");
+                startActivity(GpxFiles.viewIntent(uri));
+            }
         });
-    }
-
-    private void share(OutputFolder.Entry entry) {
-        withCacheCopy(entry, uri ->
-                startActivity(GpxFiles.shareChooser(this, uri, entry.displayName)));
     }
 
     private interface UriAction {
@@ -276,7 +362,7 @@ public class SavedRoutesActivity extends Activity {
         Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
     }
 
-    /** File name, date and size, plus a Share button that does not swallow the row's own tap. */
+    /** File name, date and size, plus an external-open button that preserves the row's tap. */
     private final class SavedAdapter extends ArrayAdapter<OutputFolder.Entry> {
 
         SavedAdapter(Context context, List<OutputFolder.Entry> entries) {
@@ -292,8 +378,8 @@ public class SavedRoutesActivity extends Activity {
             }
             ((TextView) row.findViewById(R.id.saved_name)).setText(readableName(entry.displayName));
             ((TextView) row.findViewById(R.id.saved_meta)).setText(describe(entry));
-            Button shareButton = row.findViewById(R.id.saved_share);
-            shareButton.setOnClickListener(v -> share(entry));
+            ImageButton openButton = row.findViewById(R.id.saved_share);
+            openButton.setOnClickListener(v -> open(entry));
             return row;
         }
     }
@@ -322,6 +408,13 @@ public class SavedRoutesActivity extends Activity {
                 text.append(" · ");
             }
             text.append(readableSize(entry.sizeBytes));
+        }
+        if (entry.distanceMeters >= 0) {
+            if (text.length() > 0) {
+                text.append(" · ");
+            }
+            text.append(String.format(Locale.getDefault(), "%.1f km",
+                    entry.distanceMeters / 1000.0));
         }
         return text.toString();
     }

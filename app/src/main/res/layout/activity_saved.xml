@@ -4,81 +4,43 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <!-- Converting a link is the first thing this app does, so it is the first thing on its
-         home screen. The conversion itself still belongs to MainActivity, which owns the
-         progress log, the summary and every share target - this only hands the text over. -->
-    <EditText
-        android:id="@+id/link_input"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="@string/hint_link"
-        android:importantForAutofill="no"
-        android:inputType="textUri"
-        android:layout_marginLeft="16dp"
-        android:layout_marginRight="16dp"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginTop="12dp"
-        android:maxLines="3" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="8dp"
+        android:paddingLeft="12dp"
+        android:paddingRight="4dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="4dp"
+        android:paddingTop="8dp">
 
-    <Button
-        android:id="@+id/convert_button"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginLeft="16dp"
-        android:layout_marginRight="16dp"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginTop="4dp"
-        android:text="@string/convert" />
+        <EditText
+            android:id="@+id/saved_search"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:background="@drawable/search_field_background"
+            android:hint="@string/search_routes_hint"
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:maxLines="1"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:drawablePadding="8dp"
+            android:singleLine="true" />
 
-    <!-- The other way to start a conversion: an existing GPX rather than a link. Alongside the
-         link field because they are the same kind of act, and both hand off to MainActivity. -->
-    <Button
-        android:id="@+id/reroute_gpx_button"
-        style="?android:attr/borderlessButtonStyle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/reroute_gpx" />
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginTop="12dp"
-        android:background="?android:attr/listDivider" />
-
-    <!-- Which folder is being listed. The screen only ever shows the one the user granted, so
-         naming it is the difference between "nothing saved" and "looking in the wrong place". -->
-    <TextView
-        android:id="@+id/saved_folder"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:ellipsize="middle"
-        android:paddingBottom="4dp"
-        android:paddingLeft="16dp"
-        android:paddingRight="16dp"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="12dp"
-        android:singleLine="true"
-        android:textColor="?android:attr/textColorSecondary"
-        android:textSize="13sp" />
-
-    <!-- Tapping a row is not self-evident when the row also carries a button, so it is spelled
-         out once. Hidden along with the list when there is nothing to tap. -->
-    <TextView
-        android:id="@+id/saved_hint"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingBottom="4dp"
-        android:paddingLeft="16dp"
-        android:paddingRight="16dp"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:text="@string/saved_hint"
-        android:textColor="?android:attr/textColorSecondary"
-        android:textSize="12sp"
-        android:visibility="gone" />
+        <ImageButton
+            android:id="@+id/saved_menu"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:contentDescription="@string/menu"
+            android:src="@drawable/ic_menu" />
+    </LinearLayout>
 
     <ProgressBar
         android:id="@+id/saved_progress"
@@ -110,14 +72,5 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1" />
-
-    <!-- A fixed footer rather than the end of the list: settings must stay reachable however
-         far down the routes someone has scrolled. -->
-    <Button
-        android:id="@+id/settings_button"
-        style="?android:attr/borderlessButtonStyle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/settings" />
 
 </LinearLayout>

@@ -33,9 +33,15 @@ public class TrackOutlineView extends View {
     private static final int MAX_DRAWN_POINTS = 3000;
 
     private final Paint trackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pavedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint gravelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint dirtPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint unknownPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint referencePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint startPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint finishPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint positionHaloPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint positionPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     /** The play/stop glyphs inside the markers - white reads on both fills, in both themes. */
     private final Paint glyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
@@ -43,6 +49,8 @@ public class TrackOutlineView extends View {
 
     private List<LatLng> track = Collections.emptyList();
     private List<LatLng> reference = Collections.emptyList();
+    private SurfaceProfile surfaceProfile;
+    private LatLng currentPosition;
 
     public TrackOutlineView(Context context) {
         this(context, null);
@@ -59,6 +67,15 @@ public class TrackOutlineView extends View {
         trackPaint.setStrokeJoin(Paint.Join.ROUND);
         trackPaint.setColor(0xFF1565C0);
 
+        pavedPaint.set(trackPaint);
+        pavedPaint.setColor(SurfaceProfile.Category.PAVED.color);
+        gravelPaint.set(trackPaint);
+        gravelPaint.setColor(SurfaceProfile.Category.GRAVEL.color);
+        dirtPaint.set(trackPaint);
+        dirtPaint.setColor(SurfaceProfile.Category.DIRT.color);
+        unknownPaint.set(trackPaint);
+        unknownPaint.setColor(SurfaceProfile.Category.UNKNOWN.color);
+
         // Deliberately WIDER than the route above it, not thinner. A re-route usually follows
         // most of the original, and a thin grey line under a thicker blue one is simply
         // invisible for the whole shared stretch - measured on a real 18 km re-route, the grey
@@ -73,11 +90,19 @@ public class TrackOutlineView extends View {
 
         startPaint.setColor(0xFF2E7D32);
         finishPaint.setColor(0xFFD32F2F);
+        positionHaloPaint.setColor(0xFFFFFFFF);
+        positionPaint.setColor(0xFF0288D1);
         glyphPaint.setColor(0xFFFFFFFF);
     }
 
     void setTrack(List<LatLng> track) {
         this.track = thin(track);
+        currentPosition = null;
+        invalidate();
+    }
+
+    void setSurfaceProfile(SurfaceProfile surfaceProfile) {
+        this.surfaceProfile = surfaceProfile;
         invalidate();
     }
 
@@ -87,6 +112,11 @@ public class TrackOutlineView extends View {
      */
     void setReferenceTrack(List<LatLng> reference) {
         this.reference = thin(reference);
+        invalidate();
+    }
+
+    void setCurrentPosition(TrackPosition position) {
+        currentPosition = position == null ? null : position.point;
         invalidate();
     }
 
@@ -148,16 +178,73 @@ public class TrackOutlineView extends View {
             trace(reference, lonScale, minX, minY, scale, offsetX, offsetY);
             canvas.drawPath(path, referencePaint);
         }
-        trace(track, lonScale, minX, minY, scale, offsetX, offsetY);
-        canvas.drawPath(path, trackPaint);
+        drawSurfaceTrack(canvas, lonScale, minX, minY, scale, offsetX, offsetY);
 
         LatLng first = track.get(0);
         LatLng last = track.get(track.size() - 1);
-        float radius = 7 * density;
+        float radius = 6 * density;
         drawStart(canvas, screenX(first, lonScale, minX, scale, offsetX),
                 screenY(first, minY, scale, offsetY), radius);
         drawFinish(canvas, screenX(last, lonScale, minX, scale, offsetX),
                 screenY(last, minY, scale, offsetY), radius);
+        if (currentPosition != null) {
+            float x = screenX(currentPosition, lonScale, minX, scale, offsetX);
+            float y = screenY(currentPosition, minY, scale, offsetY);
+            canvas.drawCircle(x, y, 8 * density, positionHaloPaint);
+            canvas.drawCircle(x, y, 5 * density, positionPaint);
+        }
+    }
+
+    private void drawSurfaceTrack(Canvas canvas, double lonScale, double minX, double minY,
+                                  double scale, float offsetX, float offsetY) {
+        if (surfaceProfile == null) {
+            trace(track, lonScale, minX, minY, scale, offsetX, offsetY);
+            canvas.drawPath(path, trackPaint);
+            return;
+        }
+        double total = 0;
+        for (int i = 1; i < track.size(); i++) {
+            total += LatLng.distanceMeters(track.get(i - 1), track.get(i));
+        }
+        if (total <= 0) {
+            return;
+        }
+        double distance = 0;
+        SurfaceProfile.Category active = null;
+        path.reset();
+        path.moveTo(screenX(track.get(0), lonScale, minX, scale, offsetX),
+                screenY(track.get(0), minY, scale, offsetY));
+        for (int i = 1; i < track.size(); i++) {
+            double segment = LatLng.distanceMeters(track.get(i - 1), track.get(i));
+            SurfaceProfile.Category category = surfaceProfile.categoryAt(
+                    (distance + segment / 2) / total);
+            if (active != null && category != active) {
+                canvas.drawPath(path, paintFor(active));
+                path.reset();
+                path.moveTo(screenX(track.get(i - 1), lonScale, minX, scale, offsetX),
+                        screenY(track.get(i - 1), minY, scale, offsetY));
+            }
+            active = category;
+            path.lineTo(screenX(track.get(i), lonScale, minX, scale, offsetX),
+                    screenY(track.get(i), minY, scale, offsetY));
+            distance += segment;
+        }
+        canvas.drawPath(path, paintFor(active));
+    }
+
+    private Paint paintFor(SurfaceProfile.Category category) {
+        switch (category) {
+            case TARMAC:
+                return trackPaint;
+            case PAVED:
+                return pavedPaint;
+            case GRAVEL:
+                return gravelPaint;
+            case DIRT:
+                return dirtPaint;
+            default:
+                return unknownPaint;
+        }
     }
 
     /** Reuses the one Path object; both tracks are drawn before either is traced again. */

@@ -1,3 +1,16 @@
+# Map tiles
+
+The saved-route detail map uses MapLibre with Mapbox Outdoors vector tiles. Add a public
+Mapbox token to the ignored `local.properties` file before building:
+
+```properties
+mapbox.accessToken=pk.example
+```
+
+Without a token, the app keeps using the built-in track outline. Opening a saved route with a
+token configured downloads a padded MapLibre offline region for zoom levels 8–15. The cache is
+reused on later visits and removed when the GPX file is deleted in the app.
+
 # Maps2Gpx
 
 Android app that turns a shared Google Maps route link into a GPX file — and re-routes an
@@ -9,8 +22,8 @@ Three entry points:
 
 1. **Google Maps → Share → Maps2Gpx** (the main one). The app receives the link,
    converts immediately, and shows a running log.
-2. **Launch the app** and either paste a link or pick a GPX to re-route — both live on the
-   home screen.
+2. **Launch the app** to browse the GPX files in the configured output folder. Tap a file for
+  its track outline, elevation profile, measurements, sharing and direction reversal.
 3. **Share or open a `.gpx` file with Maps2Gpx** from any other app. The existing track is
    routed again with your own engine and profile — see
    [Re-routing an existing GPX](#re-routing-an-existing-gpx).
@@ -19,20 +32,31 @@ Three entry points:
 
 | Screen | What it is |
 | --- | --- |
-| **Home** (launcher) | The route library: paste a link, pick a GPX to re-route, and every GPX already saved in your output folder |
+| **Home** (launcher) | The title-free route library containing every GPX in the configured output folder |
+| **GPX details** | Track outline, elevation profile, live route position, measurements, open/share actions and reverse-copy action |
 | **Splash / summary** | Only while converting: engine prompts, progress, then the route summary |
 | **Settings** | Output folder, routing engine, what happens after conversion, and the full conversion log |
 
-Launching the app lands on the **library**, not on the settings — the settings are set once, the
-library is what there is to come back to. Both ways of starting a conversion sit at the top of
-it, because they are the same act with different input: one takes a link, the other a file.
+Launching the app lands on the **library**, not on settings. Maps links and external GPX files
+still enter through Android's Share/Open actions, while the launcher stays focused on saved
+routes.
 
-`SavedRoutesActivity` is the launcher activity and holds **no conversion logic at all**. Pasting
-a link or picking a file hands off to `MainActivity` as an `ACTION_SEND` or `ACTION_VIEW` intent
-— the same door Google Maps comes through — so the engine prompts, the splash, the summary and
-the log behave identically however the route arrived, and none of it is duplicated. `MainActivity`
-keeps every intent filter other apps see, which is also why it keeps the app name as its label
-while its title bar reads "Settings".
+`SavedRoutesActivity` is the launcher activity and holds **no conversion logic at all**.
+`MainActivity` keeps every intent filter other apps see, so Google Maps shares and GPX Open/Share
+actions still use the same conversion flow.
+
+### Build and deploy
+
+With USB debugging enabled and an authorized Android device connected:
+
+```bash
+python __ai_scripts/build_and_deploy.py
+```
+
+The script builds through the repository's Gradle wrapper, resolves `adb` from `PATH` or
+`local.properties`, installs the APK with replacement enabled, and launches the library. Use
+`--clean` for a clean build, `--device SERIAL` when multiple devices are connected, or
+`--no-launch` to install without opening the app.
 
 Note for anyone upgrading rather than installing fresh: the `MAIN`/`LAUNCHER` filter moved from
 `MainActivity` to `SavedRoutesActivity`, so an existing home-screen shortcut may need to be
@@ -71,7 +95,8 @@ action on whatever it last converted.
 ### The route library
 
 The home screen lists every GPX in the chosen folder, newest first, with its date and size. Tap
-one to open it in a GPX app, or **Share** to send it on.
+one for its in-app details. The arrow action opens it in the configured GPX app or Android's
+default handler. The details page provides the Android share sheet and can save a reversed copy.
 
 **The folder is the record.** There is no database of past conversions and no need for one:
 the files are already there, already named after their endpoints, and an index maintained on

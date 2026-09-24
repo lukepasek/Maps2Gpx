@@ -33,6 +33,21 @@ final class Settings {
         }
     }
 
+    /** Travel type assumed when an imported GPX is routed again. */
+    enum TravelMode {
+        CYCLING("cycling", "Cycling"),
+        WALKING("walking", "Walking or hiking"),
+        DRIVING("driving", "Driving");
+
+        final String value;
+        final String label;
+
+        TravelMode(String value, String label) {
+            this.value = value;
+            this.label = label;
+        }
+    }
+
     /**
      * Surface presets for Valhalla cycling, mapped onto its {@code bicycle_type} and
      * {@code avoid_bad_surfaces} costing options. Verified to change the route where
@@ -91,6 +106,7 @@ final class Settings {
     private static final String KEY_ACTION = "post_action";
     private static final String KEY_DIRECT_COMPONENT = "direct_component";
     private static final String KEY_ENGINE = "routing_engine";
+    private static final String KEY_GPX_TRAVEL_MODE = "gpx_travel_mode";
     private static final String KEY_SURFACE = "surface";
     private static final String KEY_AUTO_CLOSE = "auto_close";
     private static final String KEY_AUTO_OPEN = "auto_open";
@@ -152,6 +168,19 @@ final class Settings {
 
     void setRoutingEngine(RoutingEngine engine) {
         prefs().edit().putString(KEY_ENGINE, engine.name()).apply();
+    }
+
+    TravelMode gpxTravelMode() {
+        String stored = prefs().getString(KEY_GPX_TRAVEL_MODE, TravelMode.CYCLING.name());
+        try {
+            return TravelMode.valueOf(stored);
+        } catch (IllegalArgumentException e) {
+            return TravelMode.CYCLING;
+        }
+    }
+
+    void setGpxTravelMode(TravelMode travelMode) {
+        prefs().edit().putString(KEY_GPX_TRAVEL_MODE, travelMode.name()).apply();
     }
 
     BRouterProfile brouterProfile() {

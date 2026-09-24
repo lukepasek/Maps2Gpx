@@ -98,6 +98,11 @@ final class OutputFolder {
      * @return where it landed - the document URI plus the name the provider actually used.
      */
     Saved save(Uri treeUri, String fileName, String gpx) throws IOException {
+        return save(treeUri, fileName, gpx.getBytes(UTF8));
+    }
+
+    /** Writes source GPX bytes unchanged, preserving the XML declaration's encoding. */
+    Saved save(Uri treeUri, String fileName, byte[] gpx) throws IOException {
         ContentResolver resolver = context.getContentResolver();
         Uri parent = DocumentsContract.buildDocumentUriUsingTree(
                 treeUri, DocumentsContract.getTreeDocumentId(treeUri));
@@ -117,7 +122,7 @@ final class OutputFolder {
             if (out == null) {
                 throw new IOException("Could not open " + file + " for writing");
             }
-            out.write(gpx.getBytes(UTF8));
+            out.write(gpx);
         }
 
         String actualName = queryDisplayName(file);
@@ -194,6 +199,8 @@ final class OutputFolder {
         final long sizeBytes;
         /** 0 when the provider does not report one. */
         final long modifiedMillis;
+        /** Negative until the GPX geometry has been read. */
+        volatile double distanceMeters = -1;
 
         Entry(Uri uri, String displayName, long sizeBytes, long modifiedMillis) {
             this.uri = uri;

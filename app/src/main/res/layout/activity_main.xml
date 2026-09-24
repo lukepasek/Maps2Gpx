@@ -45,6 +45,38 @@
             android:text="@string/change" />
     </LinearLayout>
 
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/settings_gpx_travel_mode"
+        android:textStyle="bold" />
+
+    <RadioGroup
+        android:id="@+id/gpx_travel_mode_group"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <RadioButton
+            android:id="@+id/gpx_travel_cycling"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/travel_cycling" />
+
+        <RadioButton
+            android:id="@+id/gpx_travel_walking"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/travel_walking" />
+
+        <RadioButton
+            android:id="@+id/gpx_travel_driving"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/travel_driving" />
+    </RadioGroup>
+
 
     <TextView
         android:layout_width="match_parent"

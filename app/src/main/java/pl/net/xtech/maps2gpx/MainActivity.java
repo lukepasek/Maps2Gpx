@@ -18,6 +18,9 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ImageSpan;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
@@ -34,11 +37,10 @@ import android.widget.Toast;
 
 import androidx.core.content.IntentCompat;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -48,8 +50,14 @@ import java.util.concurrent.Executors;
 public class MainActivity extends Activity {
 
     private static final String TAG = "Maps2Gpx";
+    private static final String EXTRA_PROMPT_REROUTE = "prompt_reroute";
     private static final int REQUEST_PICK_FOLDER = 1;
     private static final Charset UTF8 = Charset.forName("UTF-8");
+
+    private enum PendingImportAction {
+        VIEW,
+        SEND_WITH_ELEVATION
+    }
 
     /**
      * What a conversion runs on. Two kinds, because there are two entry points: a Google Maps
@@ -103,6 +111,7 @@ public class MainActivity extends Activity {
     private TextView directValue;
     private RadioGroup actionGroup;
     private RadioGroup engineGroup;
+    private RadioGroup gpxTravelModeGroup;
     private TextView engineHint;
     private CheckBox autoOpenBox;
     private CheckBox autoCloseBox;
@@ -120,6 +129,9 @@ public class MainActivity extends Activity {
     private String savedName;
     /** Set when a conversion finished before a folder was chosen. */
     private boolean exportPending;
+    /** Source GPX waiting to be copied into the Library after folder selection. */
+    private Source importPending;
+    private PendingImportAction importPendingAction;
     /**
      * True while showing the spinner-only screen: launched as a share/view target with a
      * direct-open app configured, so there is nothing to decide and nothing to read.
@@ -145,6 +157,8 @@ public class MainActivity extends Activity {
      * later reroute.
      */
     private boolean forceOpen;
+    /** True only when the user explicitly chose the plain Convert to GPX command. */
+    private boolean openInViewer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -154,11 +168,13 @@ public class MainActivity extends Activity {
         settings = new Settings(this);
 
         Source incoming = incomingSource(getIntent());
+        boolean promptReroute = incoming != null
+            && getIntent().getBooleanExtra(EXTRA_PROMPT_REROUTE, false);
         // Straight-through case: something to convert arrived and the user already said which
         // app to open it in, so show a spinner rather than a UI nobody needs to touch.
-        splashMode = incoming != null
-                && settings.postAction() == Settings.PostAction.DIRECT
-                && settings.directComponent() != null;
+        splashMode = incoming != null && (incoming.isGpx() || promptReroute
+            || settings.postAction() == Settings.PostAction.DIRECT
+            && settings.directComponent() != null);
 
         pendingSource = incoming;
 
@@ -169,6 +185,15 @@ public class MainActivity extends Activity {
             tintCompoundIcons(findViewById(R.id.splash_disclaimer));
             setDisclaimerFor(incoming);
             findViewById(R.id.splash_settings).setOnClickListener(v -> leaveSplash());
+            Button openOriginal = findViewById(R.id.surface_open_original);
+            Button sendOriginal = findViewById(R.id.surface_send_original);
+            boolean canUseOriginal = incoming != null && incoming.isGpx();
+            openOriginal.setVisibility(canUseOriginal ? View.VISIBLE : View.GONE);
+            openOriginal.setOnClickListener(canUseOriginal
+                    ? v -> openOriginalGpx(incoming) : null);
+            sendOriginal.setVisibility(canUseOriginal ? View.VISIBLE : View.GONE);
+            sendOriginal.setOnClickListener(canUseOriginal
+                    ? v -> sendOriginalWithElevation(incoming) : null);
             // Before the surface is settled, name the backend only - the prompt is where
             // the surface is being chosen, so echoing it back there would be noise.
             showBackendInfo(false);
@@ -177,6 +202,10 @@ public class MainActivity extends Activity {
         }
 
         if (incoming == null) {
+            return;
+        }
+        if (incoming.isGpx()) {
+            promptForReroute(incoming);
             return;
         }
         // Valhalla's surface preference changes the route, so it has to be settled before
@@ -253,6 +282,9 @@ public class MainActivity extends Activity {
                 info.append("\nSurface: ").append(settings.surface().label);
             }
         }
+        if (pendingSource != null && pendingSource.isGpx()) {
+            info.append("\nTravel type: ").append(settings.gpxTravelMode().label);
+        }
         if (engine == Settings.RoutingEngine.BROUTER) {
             info.append(BRouterRouter.isInstalled(this)
                     ? "\nOffline — needs BRouter's segments for this area"
@@ -290,7 +322,7 @@ public class MainActivity extends Activity {
      */
     private void showOptionPrompt(int titleRes, String subtitleText, String[] labels,
                                   int selected, int primaryLabelRes, boolean offerOpen,
-                                  ChoiceHandler handler) {
+                                  Source source, ChoiceHandler handler) {
         View promptGroup = findViewById(R.id.surface_group);
         RadioGroup options = findViewById(R.id.surface_options);
         TextView title = findViewById(R.id.surface_title);
@@ -305,6 +337,7 @@ public class MainActivity extends Activity {
         title.setText(titleRes);
         subtitle.setText(subtitleText);
 
+        options.setVisibility(View.VISIBLE);
         options.removeAllViews();
         for (int i = 0; i < labels.length; i++) {
             RadioButton button = new RadioButton(this);
@@ -322,6 +355,7 @@ public class MainActivity extends Activity {
         goAndOpen.setOnClickListener(offerOpen
                 ? v -> handler.onChosen(checkedIndex(options, labels, initial), true)
                 : null);
+        configureGpxActionButtons(source);
     }
 
     private int checkedIndex(RadioGroup options, String[] labels, int fallback) {
@@ -329,23 +363,12 @@ public class MainActivity extends Activity {
         return checked >= 0 && checked < labels.length ? checked : fallback;
     }
 
-    /** Shows exactly one of the splash's three faces. */
+    /** Shows exactly one of the splash's prompt and progress faces. */
     private void setSplashFace(View wanted) {
-        for (int id : new int[]{R.id.spinner_group, R.id.surface_group, R.id.summary_group}) {
+        for (int id : new int[]{R.id.spinner_group, R.id.surface_group}) {
             View face = findViewById(id);
             if (face != null) {
                 face.setVisibility(face == wanted ? View.VISIBLE : View.GONE);
-            }
-        }
-        // Both of these belong to the "about to route" state. The accuracy note sets
-        // expectations before the track exists, and the backend line says what is coming -
-        // but the summary already names the engine on its last line, so on that face they are
-        // just noise. Handled here rather than at each call site so a reroute brings them back.
-        boolean onSummary = wanted != null && wanted.getId() == R.id.summary_group;
-        for (int id : new int[]{R.id.splash_disclaimer, R.id.splash_backend}) {
-            View view = findViewById(id);
-            if (view != null) {
-                view.setVisibility(onSummary ? View.GONE : View.VISIBLE);
             }
         }
     }
@@ -358,7 +381,7 @@ public class MainActivity extends Activity {
                     "BRouter routing profile. Determines surface, gradient and traffic "
                             + "preferences.",
                     labelsOf(all), settings.brouterProfile().ordinal(),
-                    R.string.convert, true,
+                        R.string.convert, true, source,
                     (index, openAfter) -> {
                         settings.setBrouterProfile(all[index]);
                         beginConversion(source, openAfter);
@@ -368,7 +391,7 @@ public class MainActivity extends Activity {
             showOptionPrompt(R.string.surface_title,
                     "Applies to cycling routes. Ignored for driving and walking.",
                     labelsOf(all), settings.surface().ordinal(),
-                    R.string.convert, true,
+                    R.string.convert, true, source,
                     (index, openAfter) -> {
                         settings.setSurface(all[index]);
                         beginConversion(source, openAfter);
@@ -376,74 +399,198 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Google's own travel modes, which is what every router here is keyed on. */
-    private static final String[] TRAVEL_MODES = {"cycling", "walking", "driving"};
-    private static final String[] TRAVEL_MODE_LABELS =
-            {"Cycling", "Walking or hiking", "Driving"};
-
-    /**
-     * Reroute. For a GPX file the travel mode comes first, because that is the setting most
-     * likely to be wrong: GPX has no field for it, so the app may have had to guess, and a
-     * hiking loop routed as a bike ride comes back twice as long. A Maps link states its own
-     * mode, so there it goes straight to the engine.
-     */
+    /** Uses the persistent GPX travel type and backend, then asks only route-specific options. */
     private void promptForReroute(Source source) {
         if (source.isGpx()) {
-            promptForTravelMode(source);
+            source.travelMode = settings.gpxTravelMode().value;
+        }
+        if (needsPrompt(settings.routingEngine())) {
+            promptForChoice(source);
         } else {
-            promptForEngine(source);
+            showConfiguredConversionPrompt(source);
         }
     }
 
-    private void promptForTravelMode(Source source) {
-        // Whatever the last conversion settled on, so agreeing with it is one tap.
-        String current = source.travelMode != null ? source.travelMode
-                : (result != null ? result.travelMode : null);
-        showOptionPrompt(R.string.travel_mode_title,
-                "GPX files do not record this, so it may have been guessed. It decides which "
-                        + "roads and paths the route may use.",
-                TRAVEL_MODE_LABELS, indexOf(TRAVEL_MODES, current), R.string.next, false,
-                (index, openAfter) -> {
-                    source.travelMode = TRAVEL_MODES[index];
-                    promptForEngine(source);
-                });
+    private void showConfiguredConversionPrompt(Source source) {
+        View promptGroup = findViewById(R.id.surface_group);
+        RadioGroup options = findViewById(R.id.surface_options);
+        TextView title = findViewById(R.id.surface_title);
+        TextView subtitle = findViewById(R.id.surface_subtitle);
+        Button go = findViewById(R.id.surface_go);
+        Button goAndOpen = findViewById(R.id.surface_go_open);
+        if (promptGroup == null || options == null) {
+            return;
+        }
+        setSplashFace(promptGroup);
+        title.setText(R.string.reroute_gpx);
+        subtitle.setText("Using " + settings.gpxTravelMode().label + " via "
+                + settings.routingEngine().label + ". Change these defaults in Settings.");
+        options.removeAllViews();
+        options.setVisibility(View.GONE);
+        go.setText(R.string.convert);
+        go.setOnClickListener(v -> beginConversion(source, false));
+        goAndOpen.setVisibility(View.VISIBLE);
+        goAndOpen.setOnClickListener(v -> beginConversion(source, true));
+        configureGpxActionButtons(source);
     }
 
-    private static int indexOf(String[] values, String wanted) {
-        for (int i = 0; i < values.length; i++) {
-            if (values[i].equals(wanted)) {
-                return i;
+    private void configureGpxActionButtons(Source source) {
+        if (source == null || !source.isGpx()) {
+            return;
+        }
+        Button reroute = findViewById(R.id.surface_go);
+        Button sendTo = findViewById(R.id.surface_go_open);
+        Button viewTrack = findViewById(R.id.surface_open_original);
+        Button sendOriginal = findViewById(R.id.surface_send_original);
+        reroute.setText(R.string.reroute_action);
+        viewTrack.setText(R.string.view_track);
+        setInlineTargetIcon(sendTo, R.string.send_to);
+        setInlineTargetIcon(sendOriginal, R.string.send_original_to);
+    }
+
+    private void setInlineTargetIcon(Button button, int labelRes) {
+        Drawable icon = settings.postAction() == Settings.PostAction.DIRECT
+                ? directAppIcon() : null;
+        if (icon == null) {
+            icon = getDrawable(R.drawable.ic_open_external);
+        }
+        if (icon != null) {
+            int size = Math.round(22 * getResources().getDisplayMetrics().density);
+            icon.setBounds(0, 0, size, size);
+        }
+        SpannableStringBuilder label = new SpannableStringBuilder(getString(labelRes));
+        if (icon != null) {
+            label.append(' ');
+            int iconStart = label.length();
+            label.append('\uFFFC');
+            label.setSpan(new ImageSpan(icon, ImageSpan.ALIGN_BASELINE),
+                    iconStart, iconStart + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        button.setCompoundDrawablesRelative(null, null, null, null);
+        button.setText(label);
+    }
+
+    private void openOriginalGpx(Source source) {
+        if (source == null || !source.isGpx()) {
+            return;
+        }
+        Uri tree = outputFolder.treeUri();
+        if (tree == null) {
+            importPending = source;
+            importPendingAction = PendingImportAction.VIEW;
+            appendLog("Choose the Library folder before importing this GPX…");
+            pickFolder();
+            return;
+        }
+
+        View spinner = findViewById(R.id.spinner_group);
+        if (spinner != null) {
+            setSplashFace(spinner);
+        }
+        if (splashStatus != null) {
+            splashStatus.setText("Importing GPX and checking road surfaces…");
+        }
+        executor.execute(() -> {
+            try {
+                if (source.gpxName == null) {
+                    source.gpxName = GpxFiles.displayNameOf(this, source.gpxUri);
+                }
+                if (source.gpxBytes == null) {
+                    source.gpxBytes = GpxFiles.readAll(this, source.gpxUri);
+                }
+                GpxReader.Parsed imported = GpxReader.read(
+                        new ByteArrayInputStream(source.gpxBytes));
+                SurfaceProfile importedSurface = imported.surfaceProfile;
+                if (importedSurface == null) {
+                    try {
+                        importedSurface = SurfaceAnalyzer.fetch(imported.original.track);
+                    } catch (IOException | RuntimeException ignored) {
+                        // Import remains useful without surfaces; the viewer can retry later.
+                    }
+                }
+                String fileName = source.gpxName.toLowerCase(Locale.US).endsWith(".gpx")
+                        ? source.gpxName : source.gpxName + ".gpx";
+                OutputFolder.Saved saved = outputFolder.save(
+                        tree, fileName, source.gpxBytes);
+                if (importedSurface != null) {
+                    SurfaceCache.save(this, saved.uri.toString(), imported.original.track,
+                            importedSurface);
+                }
+                runOnUiThread(() -> {
+                    startActivity(SavedRouteDetailActivity.intentFor(
+                            this, saved.uri, saved.displayName));
+                    finish();
+                });
+            } catch (IOException | RuntimeException e) {
+                runOnUiThread(() -> {
+                    toast("Could not import GPX into the Library");
+                    appendLog("Import failed: " + e.getMessage());
+                    promptForReroute(source);
+                });
             }
-        }
-        return 0;
+        });
     }
 
-    /**
-     * Engine, then that engine's own option, then convert again. Starting with the engine means
-     * there is always something to change - OSRM takes no per-route option, so a profile-only
-     * prompt would be a dead end there.
-     */
-    private void promptForEngine(Source source) {
-        Settings.RoutingEngine[] all = Settings.RoutingEngine.values();
-        showOptionPrompt(R.string.settings_engine,
-                "Route the same stops again with a different backend.",
-                labelsOf(all), settings.routingEngine().ordinal(),
-                // Engines that take a further option chain to a second prompt, so this step
-                // is "Next" rather than the thing that starts a conversion.
-                needsPrompt(settings.routingEngine()) ? R.string.next : R.string.convert, false,
-                (index, openAfter) -> {
-                    Settings.RoutingEngine chosen = all[index];
-                    settings.setRoutingEngine(chosen);
-                    if (chosen == Settings.RoutingEngine.BROUTER
-                            && !BRouterRouter.isInstalled(this)) {
-                        appendLog("BRouter is not installed - this will fall back online.");
+    private void sendOriginalWithElevation(Source source) {
+        if (source == null || !source.isGpx()) {
+            return;
+        }
+        Uri tree = outputFolder.treeUri();
+        if (tree == null) {
+            importPending = source;
+            importPendingAction = PendingImportAction.SEND_WITH_ELEVATION;
+            appendLog("Choose the Library folder before sending this GPX…");
+            pickFolder();
+            return;
+        }
+
+        View spinner = findViewById(R.id.spinner_group);
+        if (spinner != null) {
+            setSplashFace(spinner);
+        }
+        if (splashStatus != null) {
+            splashStatus.setText("Checking GPX elevation…");
+        }
+        executor.execute(() -> {
+            try {
+                if (source.gpxName == null) {
+                    source.gpxName = GpxFiles.displayNameOf(this, source.gpxUri);
+                }
+                if (source.gpxBytes == null) {
+                    source.gpxBytes = GpxFiles.readAll(this, source.gpxUri);
+                }
+                GpxReader.Parsed parsed = GpxReader.read(
+                        new ByteArrayInputStream(source.gpxBytes));
+                byte[] updated = source.gpxBytes;
+                if (!parsed.original.hasElevation()) {
+                    List<LatLng> elevated = Elevation.fill(parsed.original.track);
+                    Route elevatedRoute = new Route(elevated, parsed.original.distanceMeters,
+                            parsed.original.durationSeconds, parsed.original.profile,
+                            parsed.original.profileTag);
+                    if (!elevatedRoute.hasElevation()) {
+                        throw new IOException("The elevation service returned no data.");
                     }
-                    if (needsPrompt(chosen)) {
-                        promptForChoice(source);
-                    } else {
-                        beginConversion(source, false);
-                    }
+                    updated = GpxElevationWriter.write(source.gpxBytes, elevated);
+                }
+                String fileName = source.gpxName.toLowerCase(Locale.US).endsWith(".gpx")
+                        ? source.gpxName : source.gpxName + ".gpx";
+                OutputFolder.Saved saved = outputFolder.save(tree, fileName, updated);
+                runOnUiThread(() -> sendSavedOriginal(source, saved));
+            } catch (IOException | RuntimeException e) {
+                runOnUiThread(() -> {
+                    toast("Could not prepare GPX with elevation");
+                    appendLog("Send original failed: " + e.getMessage());
+                    promptForReroute(source);
                 });
+            }
+        });
+    }
+
+    private void sendSavedOriginal(Source source, OutputFolder.Saved saved) {
+        savedUri = saved.uri;
+        savedName = saved.displayName;
+        showConfiguredConversionPrompt(source);
+        dispatchPostAction();
     }
 
     private String[] labelsOf(Object[] values) {
@@ -451,10 +598,8 @@ public class MainActivity extends Activity {
         for (int i = 0; i < values.length; i++) {
             if (values[i] instanceof Settings.BRouterProfile) {
                 labels[i] = ((Settings.BRouterProfile) values[i]).label;
-            } else if (values[i] instanceof Settings.Surface) {
-                labels[i] = ((Settings.Surface) values[i]).label;
             } else {
-                labels[i] = ((Settings.RoutingEngine) values[i]).label;
+                labels[i] = ((Settings.Surface) values[i]).label;
             }
         }
         return labels;
@@ -462,6 +607,7 @@ public class MainActivity extends Activity {
 
     private void beginConversion(Source source, boolean openWhenDone) {
         forceOpen = openWhenDone;
+        openInViewer = !openWhenDone;
         showBackendInfo(true);
         View spinner = findViewById(R.id.spinner_group);
         if (spinner != null) {
@@ -508,7 +654,10 @@ public class MainActivity extends Activity {
                 (button, checked) -> settings.setAutoCloseAfterOpen(checked));
 
         engineGroup = findViewById(R.id.engine_group);
+        gpxTravelModeGroup = findViewById(R.id.gpx_travel_mode_group);
         engineHint = findViewById(R.id.engine_hint);
+        gpxTravelModeGroup.setOnCheckedChangeListener((group, id) ->
+            settings.setGpxTravelMode(gpxTravelModeFor(id)));
         engineGroup.setOnCheckedChangeListener((group, id) -> {
             Settings.RoutingEngine chosen = engineFor(id);
             settings.setRoutingEngine(chosen);
@@ -587,6 +736,28 @@ public class MainActivity extends Activity {
         return Settings.RoutingEngine.OSRM;
     }
 
+    private Settings.TravelMode gpxTravelModeFor(int checkedId) {
+        if (checkedId == R.id.gpx_travel_walking) {
+            return Settings.TravelMode.WALKING;
+        }
+        if (checkedId == R.id.gpx_travel_driving) {
+            return Settings.TravelMode.DRIVING;
+        }
+        return Settings.TravelMode.CYCLING;
+    }
+
+    private int radioFor(Settings.TravelMode travelMode) {
+        switch (travelMode) {
+            case WALKING:
+                return R.id.gpx_travel_walking;
+            case DRIVING:
+                return R.id.gpx_travel_driving;
+            case CYCLING:
+            default:
+                return R.id.gpx_travel_cycling;
+        }
+    }
+
     private int radioFor(Settings.RoutingEngine engine) {
         switch (engine) {
             case VALHALLA:
@@ -626,6 +797,10 @@ public class MainActivity extends Activity {
     }
 
     private void refreshSettingsUi() {
+        int wantedTravelMode = radioFor(settings.gpxTravelMode());
+        if (gpxTravelModeGroup.getCheckedRadioButtonId() != wantedTravelMode) {
+            gpxTravelModeGroup.check(wantedTravelMode);
+        }
         Settings.RoutingEngine engine = settings.routingEngine();
         int wantedEngine = radioFor(engine);
         if (engineGroup.getCheckedRadioButtonId() != wantedEngine) {
@@ -775,7 +950,20 @@ public class MainActivity extends Activity {
             return;
         }
         forceOpen = false;
+        openInViewer = false;
+        if (incoming.isGpx()) {
+            recreate();
+            return;
+        }
         startConversion(incoming);
+    }
+
+    static Intent intentForReroute(Context context, Uri uri) {
+        return new Intent(context, MainActivity.class)
+                .setAction(Intent.ACTION_VIEW)
+                .setDataAndType(uri, "application/gpx+xml")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                .putExtra(EXTRA_PROMPT_REROUTE, true);
     }
 
     /**
@@ -885,210 +1073,11 @@ public class MainActivity extends Activity {
         for (String notice : converted.notices.messages) {
             appendLog("WARNING: " + notice);
         }
-        if (splashMode) {
-            showRouteSummary(converted);
-        } else {
+        if (!splashMode) {
             shareButton.setEnabled(true);
             openButton.setEnabled(true);
         }
         exportAndShare();
-    }
-
-    /** Swaps the spinner for what the conversion actually produced. */
-    private void showRouteSummary(Maps2Gpx.Result converted) {
-        View summaryGroup = findViewById(R.id.summary_group);
-        TextView summary = findViewById(R.id.splash_summary);
-        Button reroute = findViewById(R.id.reroute_button);
-        if (summaryGroup == null || summary == null) {
-            return;
-        }
-        setSplashFace(summaryGroup);
-        summary.setText(summaryOf(converted));
-        showNotices(converted);
-
-        TrackOutlineView outline = findViewById(R.id.track_outline);
-        if (outline != null) {
-            // Cleared rather than left alone when there is nothing to compare: the same view
-            // is reused across conversions, so a stale grey line would be a lie.
-            outline.setReferenceTrack(converted.sourceRoute == null
-                    ? null : converted.sourceRoute.track);
-            outline.setTrack(converted.route.track);
-        }
-        View legend = findViewById(R.id.track_legend);
-        if (legend != null) {
-            legend.setVisibility(converted.sourceRoute == null ? View.GONE : View.VISIBLE);
-        }
-        ElevationProfileView profile = findViewById(R.id.elevation_profile);
-        if (profile != null) {
-            profile.setTrack(converted.route.track);
-            // No point reserving 76dp for an empty box when the DEM had nothing.
-            profile.setVisibility(profile.hasProfile() ? View.VISIBLE : View.GONE);
-        }
-
-        Button open = findViewById(R.id.summary_open_button);
-        if (open != null) {
-            // Hidden while auto-open handles it; exportAndShare reveals it otherwise.
-            open.setVisibility(View.GONE);
-        }
-
-        if (reroute != null) {
-            Source source = pendingSource;
-            boolean canReroute = source != null;
-            reroute.setEnabled(canReroute);
-            reroute.setOnClickListener(canReroute ? v -> promptForReroute(source) : null);
-        }
-    }
-
-    /**
-     * Puts the routing warnings on screen. Previously these only reached the log, where the
-     * splash shows one line at a time and the whole trace scrolls past - so "your offline route
-     * came from an online server" was invisible at exactly the moment it mattered.
-     */
-    private void showNotices(Maps2Gpx.Result converted) {
-        TextView warning = findViewById(R.id.summary_warning);
-        Button brouter = findViewById(R.id.brouter_button);
-        List<String> messages = converted.notices.messages;
-
-        if (warning != null) {
-            warning.setVisibility(messages.isEmpty() ? View.GONE : View.VISIBLE);
-            if (!messages.isEmpty()) {
-                warning.setText(joinLines(messages));
-                tintCompoundIcons(warning);
-            }
-        }
-        if (brouter != null) {
-            // Only offered when rd5 tiles were the actual reason: BRouter cannot fetch them by
-            // itself and neither can we, so opening the app is the one useful next step.
-            boolean missing = !converted.notices.missingSegments.isEmpty();
-            brouter.setVisibility(missing ? View.VISIBLE : View.GONE);
-            brouter.setOnClickListener(missing ? v -> openBRouter() : null);
-        }
-    }
-
-    private static String joinLines(List<String> messages) {
-        StringBuilder text = new StringBuilder();
-        for (String message : messages) {
-            if (text.length() > 0) {
-                text.append('\n');
-            }
-            text.append(message);
-        }
-        return text.toString();
-    }
-
-    /**
-     * Opens BRouter itself, where the rd5 segments are downloaded - Maps2Gpx cannot fetch them,
-     * they are 5°x5° tiles managed inside that app. Falls back to its store listing, which is
-     * the right destination if it turns out not to be installed after all.
-     */
-    private void openBRouter() {
-        Intent launch = getPackageManager().getLaunchIntentForPackage(BRouterRouter.PACKAGE);
-        if (launch == null) {
-            openBRouterListing();
-            return;
-        }
-        try {
-            startActivity(launch);
-        } catch (RuntimeException e) {
-            appendLog("Could not open BRouter: " + e.getMessage());
-            toast("Could not open BRouter");
-        }
-    }
-
-    private CharSequence summaryOf(Maps2Gpx.Result converted) {
-        Route route = converted.route;
-        StringBuilder text = new StringBuilder();
-        text.append(converted.startLabel).append("  →  ").append(converted.endLabel);
-
-        // Own estimate rather than the router's: BRouter reports no duration at all, and a
-        // router's figure ignores how this rider actually rides. With BRouter the chosen
-        // profile is a better speed hint than the link's travel mode.
-        DurationEstimate estimate;
-        if (settings.routingEngine() == Settings.RoutingEngine.BROUTER) {
-            Settings.BRouterProfile profile = settings.brouterProfile();
-            estimate = DurationEstimate.at(route.distanceMeters, route.ascentMeters(),
-                    profile.kmh, profile.climbMetersPerHour);
-        } else {
-            estimate = DurationEstimate.of(route.distanceMeters, route.ascentMeters(),
-                    converted.travelMode, settings.surface());
-        }
-        text.append(String.format(Locale.US, "\n%.1f km · %s",
-                route.distanceMeters / 1000.0, formatDuration(estimate.seconds)));
-        if (route.durationSeconds > 0) {
-            text.append(" (router: ").append(formatDuration(route.durationSeconds)).append(')');
-        }
-
-        text.append(String.format(Locale.US, "\nEstimated at %.0f km/h", estimate.kmh));
-        if (estimate.climbMetersPerHour > 0 && route.ascentMeters() > 0) {
-            text.append(String.format(Locale.US, " + %.0f m/h climbing",
-                    estimate.climbMetersPerHour));
-        }
-
-        if (route.hasElevation()) {
-            text.append(String.format(Locale.US, "\nAscent %.0f m · Descent %.0f m",
-                    route.ascentMeters(), route.descentMeters()));
-            Double low = route.minEle();
-            Double high = route.maxEle();
-            if (low != null && high != null) {
-                text.append(String.format(Locale.US, "\nElevation %.0f–%.0f m", low, high));
-            }
-        } else {
-            text.append("\nNo elevation data");
-        }
-
-        if (converted.travelModeNote != null) {
-            text.append("\nAs ").append(converted.travelMode)
-                    .append(" (").append(converted.travelModeNote).append(')');
-        }
-        text.append(comparedWith(converted.sourceRoute, route));
-        text.append(daylightAt(converted.endPoint));
-        text.append("\n").append(route.profile);
-        return text;
-    }
-
-    /**
-     * What re-routing actually changed. The outline above shows where the two tracks diverge;
-     * these totals say by how much, which together is the only way to tell "the same journey on
-     * my roads" from "a different route entirely".
-     */
-    private static String comparedWith(Route source, Route route) {
-        if (source == null || source.distanceMeters <= 0) {
-            return "";
-        }
-        // Distance only, deliberately. Ascent looks like the obvious second number, but the two
-        // figures come from different elevation sources - the file's own heights against this
-        // app's DEM lookup - and on a flat 18 km re-route that difference alone accounted for
-        // 57 m against 167 m. Comparing them would say more about the DEM than the route.
-        double delta = route.distanceMeters - source.distanceMeters;
-        return String.format(Locale.US, "\nOriginal %.1f km  (%+.1f km, %+.0f%%)",
-                source.distanceMeters / 1000.0, delta / 1000.0,
-                100 * delta / source.distanceMeters);
-    }
-
-    /** Sunrise and sunset at the destination, computed locally - no network needed. */
-    private String daylightAt(LatLng destination) {
-        if (destination == null) {
-            return "";
-        }
-        long[] sun = SolarTimes.sunriseSunset(
-                destination.lat, destination.lon, System.currentTimeMillis());
-        if (sun == null) {
-            return "\nThe sun does not rise or set there today";
-        }
-        return "\nSunrise " + clock(sun[0]) + " · Sunset " + clock(sun[1]);
-    }
-
-    /** Formatted in the device's own time zone, which is the one the user reads clocks in. */
-    private static String clock(long millis) {
-        return new SimpleDateFormat("HH:mm", Locale.US).format(new Date(millis));
-    }
-
-    private static String formatDuration(double seconds) {
-        long minutes = Math.round(seconds / 60.0);
-        if (minutes < 60) {
-            return minutes + " min";
-        }
-        return (minutes / 60) + " h " + (minutes % 60) + " min";
     }
 
     /**
@@ -1112,7 +1101,8 @@ public class MainActivity extends Activity {
 
         OutputFolder.Saved saved;
         try {
-            saved = outputFolder.save(tree, result.fileName, result.gpx);
+            byte[] libraryGpx = GpxHandoffWriter.write(result.gpx.getBytes(UTF8));
+            saved = outputFolder.save(tree, result.fileName, libraryGpx);
         } catch (IOException | RuntimeException e) {
             leaveSplash();
             appendLog("Save failed: " + e.getMessage());
@@ -1122,15 +1112,33 @@ public class MainActivity extends Activity {
         }
         savedUri = saved.uri;
         savedName = saved.displayName;
+        if (result.surfaceProfile != null) {
+            SurfaceCache.save(this, savedUri.toString(), result.route.track,
+                result.surfaceProfile);
+        }
         appendLog("Saved " + saved.displayName + " to " + outputFolder.describe(tree));
         if (!splashMode) {
             refreshSettingsUi();
         }
 
+        if (splashMode) {
+            Intent viewer = openInViewer
+                    ? SavedRouteDetailActivity.intentFor(this, savedUri, savedName)
+                    : SavedRouteDetailActivity.intentForHandoff(this, savedUri, savedName);
+            startActivity(viewer);
+            finish();
+            return;
+        }
+
+        if (openInViewer) {
+            startActivity(SavedRouteDetailActivity.intentFor(this, savedUri, savedName));
+            finish();
+            return;
+        }
+
         if (!settings.autoOpen() && !forceOpen) {
             // Saving still happened; only the hand-off waits for the user.
             appendLog("Auto-open is off - use Open when you are ready.");
-            revealSummaryOpenButton();
             return;
         }
         dispatchPostAction();
@@ -1150,19 +1158,6 @@ public class MainActivity extends Activity {
                 openResult();
                 break;
         }
-    }
-
-    /**
-     * Makes opening an explicit act when auto-open is off. On the splash that is a button on
-     * the summary; in the full UI the Open button is already there and always enabled.
-     */
-    private void revealSummaryOpenButton() {
-        Button open = findViewById(R.id.summary_open_button);
-        if (open == null) {
-            return;
-        }
-        open.setVisibility(View.VISIBLE);
-        open.setOnClickListener(v -> dispatchPostAction());
     }
 
     /**
@@ -1249,7 +1244,10 @@ public class MainActivity extends Activity {
             startActivityForResult(OutputFolder.pickIntent(), REQUEST_PICK_FOLDER);
         } catch (RuntimeException e) {
             exportPending = false;
+            importPending = null;
+            importPendingAction = null;
             appendLog("No folder picker available on this device: " + e.getMessage());
+            toast("No folder picker available");
         }
     }
 
@@ -1261,11 +1259,17 @@ public class MainActivity extends Activity {
         }
         boolean wasPending = exportPending;
         exportPending = false;
+        Source pendingImport = importPending;
+        importPending = null;
+        PendingImportAction pendingAction = importPendingAction;
+        importPendingAction = null;
 
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
             if (wasPending) {
                 appendLog("No folder chosen - nothing saved. Use Share to send the GPX, "
                         + "or Folder to choose a destination.");
+            } else if (pendingImport != null) {
+                appendLog("No Library folder chosen - the GPX was not imported.");
             }
             return;
         }
@@ -1274,6 +1278,12 @@ public class MainActivity extends Activity {
         appendLog("Output folder: " + outputFolder.describe(tree));
         if (wasPending) {
             exportAndShare();
+        } else if (pendingImport != null) {
+            if (pendingAction == PendingImportAction.SEND_WITH_ELEVATION) {
+                sendOriginalWithElevation(pendingImport);
+            } else {
+                openOriginalGpx(pendingImport);
+            }
         }
     }
 
@@ -1337,10 +1347,11 @@ public class MainActivity extends Activity {
     /** The in-memory result, copied out to a hand-off file. See {@link GpxFiles#cacheCopy}. */
     private Uri shareableUri() {
         if (result == null) {
-            return null;
+            return savedUri;
         }
         try {
-            return GpxFiles.cacheCopy(this, displayName(), result.gpx.getBytes(UTF8));
+            byte[] handoff = GpxHandoffWriter.write(result.gpx.getBytes(UTF8));
+            return GpxFiles.cacheCopy(this, displayName(), handoff);
         } catch (IOException | RuntimeException e) {
             appendLog("Could not prepare the file for sharing: " + e.getMessage());
             toast("Share failed");

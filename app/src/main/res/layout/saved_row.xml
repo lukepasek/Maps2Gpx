@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- blocksDescendants so the Share button keeps its own clicks while the rest of the row still
+<!-- blocksDescendants so the open button keeps its own clicks while the rest of the row still
      reaches the ListView's item click - without it the button swallows the row. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -40,13 +40,14 @@
             android:textSize="12sp" />
     </LinearLayout>
 
-    <Button
+    <ImageButton
         android:id="@+id/saved_share"
-        style="?android:attr/buttonStyleSmall"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
         android:layout_marginStart="8dp"
         android:layout_marginLeft="8dp"
-        android:text="@string/share" />
+        android:contentDescription="@string/open_default_app"
+        android:src="@drawable/ic_open_external" />
 
 </LinearLayout>

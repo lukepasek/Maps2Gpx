@@ -22,4 +22,5 @@ local.properties
 .gdrive_credentials
 .claude
 .vscode
+/__ai_scripts/onelapfit_runs/
 

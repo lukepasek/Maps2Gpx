@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Scrollable because the summary face carries a track outline and an elevation profile on
-     top of the text, which will not fit on a short screen. fillViewport keeps the shorter
-     faces (spinner, prompt) laid out as before. -->
+<!-- Scrollable so the routing options remain reachable on short screens. -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -52,100 +50,6 @@
             android:textSize="14sp" />
     </LinearLayout>
 
-    <!-- Replaces the spinner once the route is ready. -->
-    <LinearLayout
-        android:id="@+id/summary_group"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:visibility="gone">
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/summary_title"
-            android:textSize="18sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/splash_summary"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:lineSpacingExtra="3dp"
-            android:textSize="15sp" />
-
-        <!-- Routing that silently degraded: offline became online, or roads became straight
-             lines. Above the outline, because it changes what the outline means. Deliberately
-             not the same colour as the summary above it - this is the one thing on the page
-             that is not merely information, and the icon is tinted to match it in code. -->
-        <TextView
-            android:id="@+id/summary_warning"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:drawableStart="@drawable/ic_warning"
-            android:drawableLeft="@drawable/ic_warning"
-            android:drawablePadding="10dp"
-            android:gravity="start|center_vertical"
-            android:lineSpacingExtra="2dp"
-            android:textColor="@color/warning"
-            android:textSize="13sp"
-            android:visibility="gone" />
-
-        <!-- Only when rd5 tiles were the reason. We cannot download them; BRouter can. -->
-        <Button
-            android:id="@+id/brouter_button"
-            style="?android:attr/buttonStyleSmall"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/open_brouter"
-            android:visibility="gone" />
-
-        <pl.net.xtech.maps2gpx.TrackOutlineView
-            android:id="@+id/track_outline"
-            android:layout_width="match_parent"
-            android:layout_height="128dp"
-            android:layout_marginTop="12dp" />
-
-        <!-- Only shown when there are two shapes in the outline above, i.e. after a
-             re-route of an existing GPX file. -->
-        <TextView
-            android:id="@+id/track_legend"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:gravity="center"
-            android:text="@string/track_legend"
-            android:textColor="?android:attr/textColorSecondary"
-            android:textSize="12sp"
-            android:visibility="gone" />
-
-        <pl.net.xtech.maps2gpx.ElevationProfileView
-            android:id="@+id/elevation_profile"
-            android:layout_width="match_parent"
-            android:layout_height="76dp"
-            android:layout_marginTop="8dp" />
-
-        <!-- Shown only when auto-open is off, so opening is an explicit act. -->
-        <Button
-            android:id="@+id/summary_open_button"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/open"
-            android:visibility="gone" />
-
-        <Button
-            android:id="@+id/reroute_button"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/reroute" />
-    </LinearLayout>
-
     <!-- Shown first instead, when Valhalla is the routing engine: the surface preference
          has to be picked before routing, since it changes the route. -->
     <LinearLayout
@@ -178,19 +82,37 @@
             android:orientation="vertical" />
 
         <Button
-            android:id="@+id/surface_go_open"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/convert_and_open" />
-
-        <Button
             android:id="@+id/surface_go"
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="16dp"
             android:text="@string/convert" />
+
+        <Button
+            android:id="@+id/surface_open_original"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/view_track"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/surface_go_open"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/convert_and_open" />
+
+        <Button
+            android:id="@+id/surface_send_original"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/send_original_to"
+            android:visibility="gone" />
     </LinearLayout>
 
     <!-- Which backend is about to route, and how it is configured. Outside both groups so
